@@ -1,0 +1,15 @@
+---
+
+# kubernetes/tasks/proxy.yml does the heavy lifting
+
+- name: Get the cert for kubectl
+  fetch:
+    dest: /tmp/rancher.cntr.swsnet.ch.pem
+    src: "/etc/pki/tls/certs/{{ inventory_hostname }}.pem"
+    flat: yes
+
+- name: Get the key for kubectl
+  fetch:
+    dest: /tmp/rancher.cntr.swsnet.ch.key
+    src: "/etc/pki/tls/private/{{ inventory_hostname }}.pem"
+    flat: yes

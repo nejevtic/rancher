@@ -1,0 +1,13 @@
+---
+
+- include: common.yml
+  tags: common
+
+- include: proxy.yml
+  tags: proxy
+  when: "'rancher-proxy' in group_names"
+
+- include: rke.yml
+  tags: rke
+  delegate_to: localhost
+  when: "'rancher-proxy' in group_names"

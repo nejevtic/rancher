@@ -1,0 +1,27 @@
+---
+
+- name: Docker group
+  group:
+    name: docker
+
+- name: Rancher user
+  user:
+    name: rancher
+    system: yes
+    groups: docker
+
+- name: SSH directory
+  file:
+    path: /home/rancher/.ssh
+    owner: rancher
+    group: rancher
+    mode: '0700'
+    state: directory
+
+- name: Save authorized keys (from ansible02c:/root)
+  copy:
+    content: "{{ rancher_ssh_pub }}"
+    owner: rancher
+    group: rancher
+    dest: /home/rancher/.ssh/authorized_keys
+    mode: '0644'
