@@ -1,5 +1,13 @@
 ---
 
+- name: Set up local working directory
+  file:
+    path: /root/rancher
+    owner: root
+    group: root
+    mode: '0755'
+    state: directory
+
 - name: Build rancher-cluster.yml
   template:
     src: root/rancher/rancher-cluster.yml.j2
@@ -7,10 +15,10 @@
 
 - name: Get RKE
   get_url:
-    url: https://github.com/rancher/rke/releases/download/v0.2.8/rke_linux-amd64
+    url: https://github.com/rancher/rke/releases/download/v0.3.2/rke_linux-amd64
     dest: /usr/local/bin/rke
     mode: '0755'
 
 - name: Run rke
   shell: |
-    echo /usr/local/bin/rke up --config /root/rancher/rancher-cluster.yml
+    /usr/local/bin/rke up --config /root/rancher/rancher-cluster.yml

@@ -1,14 +1,14 @@
 
 nodes:
-{% for master in groups['rancher-master'] %}
+{% for master in groups['rancher_master'] %}
 - address: {{ master }}
   user: rancher
   ssh_key_path: /root/.ssh/id_rsa
   role: [ "controlplane", "etcd", "worker" ]
 {% endfor %}
 
-private_registries:
-- url: nexus.swisssign.com:5000
-  user: {{ rancher_nexus_user }}
-  password: {{ rancher_nexus_password }}
-  is_default: true
+services:
+  etcd:
+    snapshot: true
+    creation: 6h
+    retention: 24h
