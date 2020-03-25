@@ -1,14 +1,185 @@
 
+cluster_name: rancher
+
 nodes:
 {% for master in groups['rancher_master'] %}
-- address: {{ master }}
+{% set ip = lookup('dig',master) %}
+- address: {{ ip }}
   user: rancher
   ssh_key_path: /root/.ssh/id_rsa
   role: [ "controlplane", "etcd", "worker" ]
 {% endfor %}
 
+# Cluster level SSH private key
+# TODO: Adapt path
+# ssh_key_path: ~/rke/id_rsa
+
+# Note: Ensure corresponding system images are available
+# in the registry
+kubernetes_version: {{ rancher_kubernetes_version }}
+# private_registries:
+#     - url: nexus-docker.cntr.swsnet.ch
+#       is_default: true
+
+# Mgmt Cluster should use a simple CNI solution
+network:
+  plugin: canal
+
+ingress:
+  provider: nginx
+
 services:
   etcd:
-    snapshot: true
-    creation: 6h
-    retention: 24h
+    extra_args:
+      election-timeout: 5000
+      heartbeat-interval: 500
+    backup_config:
+      enabled: true
+      interval_hours: 6
+      retention: 4
+      safe_timestamp: false
+    gid: 991
+    uid: 996
+  kube-api:
+    always_pull_images: false
+    pod_security_policy: true
+    service_node_port_range: 30000-32767
+    service_cluster_ip_range: 172.23.0.0/17
+    extra_args:
+      anonymous-auth: "false"
+      profiling: "false"
+      service-account-lookup: "true"
+      audit-log-format: json
+      audit-log-maxage: "5"
+      audit-log-maxbackup: "5"
+      audit-log-maxsize: "100"
+      audit-log-path: "/var/log/kube-audit/audit-log.json"
+      audit-policy-file: "/opt/kubernetes/audit.yaml"
+      # TODO: Uncomment when enabling event rate limiting (not used initially)
+      # enable-admission-plugins: "ServiceAccount,NamespaceLifecycle,LimitRanger,PersistentVolumeLabel,DefaultStorageClass,ResourceQuota,DefaultTolerationSeconds,AlwaysPullImages,DenyEscalatingExec,NodeRestriction,EventRateLimit,PodSecurityPolicy"
+      # admission-control-config-file: "/opt/kubernetes/admission.yaml"
+      encryption-provider-config: "/opt/kubernetes/encryption.yaml"
+      tls-cipher-suites: "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_RSA_WITH_AES_256_GCM_SHA384,TLS_RSA_WITH_AES_128_GCM_SHA256"
+    extra_binds:
+      - "/opt/kubernetes:/opt/kubernetes"
+  kube_controller:
+    cluster_cidr: 172.23.128.0/17
+    service_cluster_ip_range: 172.23.0.0/17
+    extra_args:
+      profiling: "false"
+      address: "127.0.0.1"
+      terminated-pod-gc-threshold: "1000"
+      feature-gates: "RotateKubeletServerCertificate=true"
+  kubelet:
+    cluster_domain: cluster.local
+    cluster_dns_server: 172.23.0.10
+    fail_swap_on: false
+    extra_args:
+      authorization-mode: "Webhook"
+      anonymous-auth: "false"
+      feature-gates: "RotateKubeletServerCertificate=true"
+      make-iptables-util-chains: "true"
+      protect-kernel-defaults: "true"
+      streaming-connection-idle-timeout: "1800s"
+      tls-cipher-suites: "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_RSA_WITH_AES_256_GCM_SHA384,TLS_RSA_WITH_AES_128_GCM_SHA256"
+      # TODO: Once event rate limit admission controller is enabled
+      # set event-qps to 0
+      # event-qps: "0"
+  scheduler:
+    extra_args:
+      profiling: "false"
+      address: "127.0.0.1"
+
+addons: |
+  apiVersion: v1
+  kind: Namespace
+  metadata:
+    name: cattle-system
+  ---
+  apiVersion: rbac.authorization.k8s.io/v1
+  kind: Role
+  metadata:
+    name: default-psp-role
+    namespace: cattle-system
+  rules:
+  - apiGroups:
+    - extensions
+    resourceNames:
+    - default-psp
+    resources:
+    - podsecuritypolicies
+    verbs:
+    - use
+  ---
+  apiVersion: rbac.authorization.k8s.io/v1
+  kind: RoleBinding
+  metadata:
+    name: default-psp-rolebinding
+    namespace: cattle-system
+  roleRef:
+    apiGroup: rbac.authorization.k8s.io
+    kind: Role
+    name: default-psp-role
+  subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: system:serviceaccounts
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: system:authenticated
+  ---
+  apiVersion: policy/v1beta1
+  kind: PodSecurityPolicy
+  metadata:
+    name: restricted-psp
+  spec:
+    requiredDropCapabilities:
+    - NET_RAW
+    privileged: false
+    allowPrivilegeEscalation: false
+    defaultAllowPrivilegeEscalation: false
+    fsGroup:
+      rule: RunAsAny
+    runAsUser:
+      rule: MustRunAsNonRoot
+    seLinux:
+      rule: RunAsAny
+    supplementalGroups:
+      rule: RunAsAny
+    volumes:
+    - emptyDir
+    - secret
+    - persistentVolumeClaim
+    - downwardAPI
+    - configMap
+    - projected
+  ---
+  apiVersion: rbac.authorization.k8s.io/v1
+  kind: ClusterRole
+  metadata:
+    name: restricted-psp-cr
+  rules:
+  - apiGroups:
+    - extensions
+    resourceNames:
+    - restricted-psp
+    resources:
+    - podsecuritypolicies
+    verbs:
+    - use
+  ---
+  apiVersion: rbac.authorization.k8s.io/v1
+  kind: ClusterRoleBinding
+  metadata:
+    name: restricted-psp-crb
+  roleRef:
+    apiGroup: rbac.authorization.k8s.io
+    kind: ClusterRole
+    name: restricted-psp-cr
+  subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: system:serviceaccounts
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: system:authenticated

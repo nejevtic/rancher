@@ -4,12 +4,6 @@
   group:
     name: docker
 
-- name: Rancher user
-  user:
-    name: rancher
-    system: yes
-    groups: docker
-
 - name: SSH directory
   file:
     path: /home/rancher/.ssh
@@ -40,7 +34,25 @@
     dest: /etc/systemd/system/docker.service.d/proxy.conf
     mode: '0755'
 
-- name: Restart docker
-  shell: |
-    systemctl daemon-reload
-    systemctl restart docker
+#- name: Restart docker
+#  shell: |
+#    systemctl daemon-reload
+#    systemctl restart docker
+
+
+- name: Install prerequisite packages
+  package:
+    name: "{{ item }}"
+    state: latest
+  with_items:
+    - "{{ rancher_packages }}"
+  when: "'{{ cluster_name }}_worker' in group_names"
+
+- name: Start services
+  systemd:
+    name: "{{ item }}"
+    state: started
+    enabled: yes
+  with_items:
+    - "{{ rancher_services }}"
+  when: "'{{ cluster_name }}_worker' in group_names"

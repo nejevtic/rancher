@@ -3,10 +3,6 @@
 - include: common.yml
   tags: always
 
-- include: proxy.yml
-  tags: proxy
-  when: "'rancher_proxy' in group_names"
-
 - include: rke.yml
   tags: rke
   delegate_to: localhost
